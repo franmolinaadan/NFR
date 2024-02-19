@@ -14,6 +14,7 @@ import java.security.Provider
 class LoginActivity : AppCompatActivity() {
     private lateinit var signInButton:Button
     private lateinit var logInButton:Button
+    private lateinit var registerPhoneButton:Button
 
     private lateinit var emailText: TextInputEditText
     private lateinit var passwordText: TextInputEditText
@@ -26,6 +27,7 @@ class LoginActivity : AppCompatActivity() {
         passwordText = findViewById(R.id.passwordText)
         signInButton=findViewById(R.id.registerButton)
         logInButton=findViewById(R.id.logInButton)
+        registerPhoneButton=findViewById(R.id.registerPhoneButton)
 
 
         setup()
@@ -70,11 +72,15 @@ class LoginActivity : AppCompatActivity() {
                 showAlert()
             }
         }
+        registerPhoneButton.setOnClickListener{
+            val phoneIntent=Intent(this,PhoneAuthActivity::class.java)
+            startActivity(phoneIntent)
+        }
     }
     private fun showAlert(){
         val builder=AlertDialog.Builder(this)
         builder.setTitle("Error")
-        builder.setMessage("Se ha producido un error autenticando al usuario "+emailText.text+" "+passwordText.text)
+        builder.setMessage("Se ha producido un error autenticando al usuario ")
         builder.setPositiveButton("Aceptar",null)
         val dialog:AlertDialog=builder.create()
         dialog.show()
