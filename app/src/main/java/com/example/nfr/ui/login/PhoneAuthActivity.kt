@@ -6,9 +6,8 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Button
 import android.widget.Toast
-import androidx.lifecycle.ReportFragment.Companion.reportFragment
-import com.example.nfr.MainActivity
 import com.example.nfr.R
+import com.example.nfr.ui.user.UserInfoFragment
 import com.google.android.material.textfield.TextInputEditText
 import com.google.firebase.FirebaseException
 import com.google.firebase.FirebaseTooManyRequestsException
@@ -19,198 +18,160 @@ import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.PhoneAuthCredential
 import com.google.firebase.auth.PhoneAuthOptions
 import com.google.firebase.auth.PhoneAuthProvider
-import com.google.firebase.auth.auth
-import com.google.firebase.Firebase
 import com.hbb20.CountryCodePicker
 import java.util.concurrent.TimeUnit
 
 class PhoneAuthActivity : Activity() {
 
-    // [START declare_auth]
+    // Declaraciones de variables
     private lateinit var auth: FirebaseAuth
-    // [END declare_auth]
-
     private var storedVerificationId: String? = ""
     private lateinit var resendToken: PhoneAuthProvider.ForceResendingToken
     private lateinit var callbacks: PhoneAuthProvider.OnVerificationStateChangedCallbacks
     private lateinit var verficationButton: Button
-    private lateinit var verficationButtonOTP:Button
+    private lateinit var verficationButtonOTP: Button
     private lateinit var phoneText: TextInputEditText
-    private lateinit var otpVerification:TextInputEditText
-
-    private lateinit var countryCodePicker:CountryCodePicker
-    
-
+    private lateinit var otpVerification: TextInputEditText
+    private lateinit var countryCodePicker: CountryCodePicker
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         setContentView(R.layout.activity_phone_auth)
-        //CountryCodePicker
-        countryCodePicker=findViewById(R.id.login_countrycode)
-        //TextInputEditText
-        phoneText=findViewById(R.id.phoneText)
-        //Button
-        otpVerification=findViewById(R.id.otpVerification)
-        verficationButtonOTP=findViewById(R.id.verficationButtonOTP)
-        verficationButton=findViewById(R.id.verficationButton)
-        
+
+        // Inicialización de componentes de la vista
+        initializeViews()
+
+        // Configuración de callbacks y autenticación
+        setupAuthentication()
+    }
+
+    // Inicializar componentes de la vista
+    private fun initializeViews() {
+        countryCodePicker = findViewById(R.id.login_countrycode)
+        phoneText = findViewById(R.id.phoneText)
+        otpVerification = findViewById(R.id.otpVerification)
+        verficationButton = findViewById(R.id.verficationButton)
+        verficationButtonOTP = findViewById(R.id.verficationButtonOTP)
+
         countryCodePicker.registerCarrierNumberEditText(phoneText)
 
-
-        verficationButton.setOnClickListener{
-            if (!countryCodePicker.isValidFullNumber()){
+        // Escuchador para el botón de verificación
+        verficationButton.setOnClickListener {
+            if (!countryCodePicker.isValidFullNumber()) {
                 phoneText.setError("Phone number not valid")
             } else {
                 val phoneNumber = countryCodePicker.fullNumberWithPlus
-                showToast("Numero Telefono: $phoneNumber")
                 startPhoneNumberVerification(phoneNumber)
             }
         }
+
+        // Escuchador para el botón de verificación OTP
         verficationButtonOTP.setOnClickListener {
             val verificationCode = otpVerification.text.toString().trim()
             if (verificationCode.isNotEmpty()) {
-                showToast("Numero: "+verificationCode)
                 verifyPhoneNumberWithCode(storedVerificationId, verificationCode)
             } else {
                 // Manejar el caso de código de verificación vacío
             }
         }
+    }
 
+    // Configuración de callbacks y autenticación
+    private fun setupAuthentication() {
+        // Inicializar Firebase Auth
+        auth = FirebaseAuth.getInstance()
 
-        // [START initialize_auth]
-        // Initialize Firebase Auth
-        auth = Firebase.auth
-        // [END initialize_auth]
-
-        // Initialize phone auth callbacks
-        // [START phone_auth_callbacks]
+        // Inicializar callbacks de verificación telefónica
         callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
 
             override fun onVerificationCompleted(credential: PhoneAuthCredential) {
-                // This callback will be invoked in two situations:
-                // 1 - Instant verification. In some cases the phone number can be instantly
-                //     verified without needing to send or enter a verification code.
-                // 2 - Auto-retrieval. On some devices Google Play services can automatically
-                //     detect the incoming verification SMS and perform verification without
-                //     user action.
-                Log.d(TAG, "onVerificationCompleted:$credential")
+                // Callback invocado cuando la verificación se completa automáticamente
                 signInWithPhoneAuthCredential(credential)
             }
 
             override fun onVerificationFailed(e: FirebaseException) {
-                // This callback is invoked in an invalid request for verification is made,
-                // for instance if the the phone number format is not valid.
-                Log.w(TAG, "onVerificationFailed", e)
-
-                if (e is FirebaseAuthInvalidCredentialsException) {
-                    // Invalid request
-                } else if (e is FirebaseTooManyRequestsException) {
-                    // The SMS quota for the project has been exceeded
-                } else if (e is FirebaseAuthMissingActivityForRecaptchaException) {
-                    // reCAPTCHA verification attempted with null Activity
-                }
-
-                // Show a message and update the UI
+                // Callback invocado cuando la verificación falla
+                handleVerificationFailure(e)
             }
 
             override fun onCodeSent(
                 verificationId: String,
                 token: PhoneAuthProvider.ForceResendingToken,
             ) {
-                // The SMS verification code has been sent to the provided phone number, we
-                // now need to ask the user to enter the code and then construct a credential
-                // by combining the code with a verification ID.
-                Log.d(TAG, "onCodeSent:$verificationId")
-
-                // Save verification ID and resending token so we can use them later
-                storedVerificationId = verificationId
-                resendToken = token
+                // Callback invocado cuando se envía el código de verificación al número de teléfono
+                handleCodeSent(verificationId, token)
             }
         }
-        // [END phone_auth_callbacks]
-    }
 
-    // [START on_start_check_user]
-    override fun onStart() {
-        super.onStart()
-
-        // Check if user is signed in (non-null) and update UI accordingly.
+        // Verificar si el usuario ya está autenticado
         val currentUser = auth.currentUser
         updateUI(currentUser)
     }
-    // [END on_start_check_user]
 
+    // Método para iniciar la verificación del número de teléfono
     private fun startPhoneNumberVerification(phoneNumber: String) {
-        // [START start_phone_auth]
         val options = PhoneAuthOptions.newBuilder(auth)
-            .setPhoneNumber(phoneNumber) // Phone number to verify
-            .setTimeout(60L, TimeUnit.SECONDS) // Timeout and unit
-            .setActivity(this) // Activity (for callback binding)
-            .setCallbacks(callbacks) // OnVerificationStateChangedCallbacks
+            .setPhoneNumber(phoneNumber)
+            .setTimeout(60L, TimeUnit.SECONDS)
+            .setActivity(this)
+            .setCallbacks(callbacks)
             .build()
         PhoneAuthProvider.verifyPhoneNumber(options)
-        // [END start_phone_auth]
     }
 
+    // Método para verificar el código de verificación
     private fun verifyPhoneNumberWithCode(verificationId: String?, code: String) {
-        // [START verify_with_code]
         val credential = PhoneAuthProvider.getCredential(verificationId!!, code)
         signInWithPhoneAuthCredential(credential)
-        // [END verify_with_code]
     }
 
-    // [START resend_verification]
-    private fun resendVerificationCode(
-        phoneNumber: String,
-        token: PhoneAuthProvider.ForceResendingToken?,
-    ) {
-        val optionsBuilder = PhoneAuthOptions.newBuilder(auth)
-            .setPhoneNumber(phoneNumber) // Phone number to verify
-            .setTimeout(60L, TimeUnit.SECONDS) // Timeout and unit
-            .setActivity(this) // (optional) Activity for callback binding
-            // If no activity is passed, reCAPTCHA verification can not be used.
-            .setCallbacks(callbacks) // OnVerificationStateChangedCallbacks
-        if (token != null) {
-            optionsBuilder.setForceResendingToken(token) // callback's ForceResendingToken
-        }
-        PhoneAuthProvider.verifyPhoneNumber(optionsBuilder.build())
-    }
-    // [END resend_verification]
-
-    // [START sign_in_with_phone]
+    // Método para manejar la autenticación con las credenciales del teléfono
     private fun signInWithPhoneAuthCredential(credential: PhoneAuthCredential) {
         auth.signInWithCredential(credential)
             .addOnCompleteListener(this) { task ->
                 if (task.isSuccessful) {
-                    // Sign in success, update UI with the signed-in user's information
-                    Log.d(TAG, "signInWithCredential:success")
+                    // Autenticación exitosa, actualizar la interfaz de usuario
                     val user = task.result?.user
-                    // Actualizar la interfaz de usuario
                     updateUI(user)
                 } else {
-                    // Sign in failed, display a message and update the UI
-                    Log.w(TAG, "signInWithCredential:failure", task.exception)
-                    // Mostrar un mensaje de error
+                    // Autenticación fallida, mostrar un mensaje de error
                     showToast("Verificación fallida. Por favor, intenta de nuevo.")
-                    // Update UI
                     updateUI(null)
                 }
             }
     }
-    // [END sign_in_with_phone]
 
-    private fun updateUI(user: FirebaseUser? = auth.currentUser) {
+    // Método para manejar el caso de fallo en la verificación
+    private fun handleVerificationFailure(e: FirebaseException) {
+        Log.w(TAG, "onVerificationFailed", e)
+        if (e is FirebaseAuthInvalidCredentialsException) {
+            // Manejar el caso de credenciales inválidas
+        } else if (e is FirebaseTooManyRequestsException) {
+            // Manejar el caso de exceso de solicitudes
+        } else if (e is FirebaseAuthMissingActivityForRecaptchaException) {
+            // Manejar el caso de actividad faltante para Recaptcha
+        }
+        // Mostrar un mensaje y actualizar la interfaz de usuario
+    }
+
+    // Método para manejar el código enviado
+    private fun handleCodeSent(verificationId: String, token: PhoneAuthProvider.ForceResendingToken) {
+        storedVerificationId = verificationId
+        resendToken = token
+    }
+
+    // Método para actualizar la interfaz de usuario según el estado de autenticación
+    private fun updateUI(user: FirebaseUser?) {
         if (user != null) {
             // Si el usuario está autenticado, redirigir a MainActivity
-            val homeIntent=Intent(this,MainActivity::class.java)
-
-            startActivity(homeIntent)
+            val userInfoIntent = Intent(this, UserInfoFragment::class.java)
+            startActivity(userInfoIntent)
         } else {
-            // Si el usuario no está autenticado, actualizar la interfaz de usuario según sea necesario
-            // Por ejemplo, mostrar un mensaje de error o permitir que el usuario intente nuevamente
+            // Si el usuario no está autenticado, permitir que continúe el proceso de autenticación
         }
     }
+
+    // Método para mostrar un mensaje de tostada
     private fun showToast(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
@@ -218,6 +179,4 @@ class PhoneAuthActivity : Activity() {
     companion object {
         private const val TAG = "PhoneAuthActivity"
     }
-
-
 }
